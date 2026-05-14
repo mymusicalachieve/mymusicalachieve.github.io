@@ -1,0 +1,82 @@
+{
+  "hash": "bf5c900c",
+  "configHash": "b864a77d",
+  "lockfileHash": "a05be676",
+  "browserHash": "c1a1f5da",
+  "optimized": {
+    "date-fns": {
+      "src": "../../node_modules/date-fns/index.js",
+      "file": "date-fns.js",
+      "fileHash": "1c1f8c4f",
+      "needsInterop": false
+    },
+    "date-fns/locale": {
+      "src": "../../node_modules/date-fns/locale.js",
+      "file": "date-fns_locale.js",
+      "fileHash": "3aed5589",
+      "needsInterop": false
+    },
+    "react-day-picker": {
+      "src": "../../node_modules/react-day-picker/dist/esm/index.js",
+      "file": "react-day-picker.js",
+      "fileHash": "2389845e",
+      "needsInterop": false
+    },
+    "react-day-picker/locale": {
+      "src": "../../node_modules/react-day-picker/dist/esm/locale.js",
+      "file": "react-day-picker_locale.js",
+      "fileHash": "bb7bcf9a",
+      "needsInterop": false
+    },
+    "react-dom/client": {
+      "src": "../../node_modules/react-dom/client.js",
+      "file": "react-dom_client.js",
+      "fileHash": "f18c5ea7",
+      "needsInterop": true
+    },
+    "react-router-dom": {
+      "src": "../../node_modules/react-router-dom/dist/index.mjs",
+      "file": "react-router-dom.js",
+      "fileHash": "e4093a7a",
+      "needsInterop": false
+    },
+    "react": {
+      "src": "../../node_modules/react/index.js",
+      "file": "react.js",
+      "fileHash": "f72d0270",
+      "needsInterop": true
+    },
+    "react/jsx-dev-runtime": {
+      "src": "../../node_modules/react/jsx-dev-runtime.js",
+      "file": "react_jsx-dev-runtime.js",
+      "fileHash": "c14a346e",
+      "needsInterop": true
+    }
+  },
+  "chunks": {
+    "DateLib-jsZfzBRh": {
+      "file": "DateLib-jsZfzBRh.js",
+      "isDynamicEntry": false
+    },
+    "date-fns-PV-AbY4R": {
+      "file": "date-fns-PV-AbY4R.js",
+      "isDynamicEntry": false
+    },
+    "isSameWeek-BhD9Q9QT": {
+      "file": "isSameWeek-BhD9Q9QT.js",
+      "isDynamicEntry": false
+    },
+    "locale-CrMkr7iU": {
+      "file": "locale-CrMkr7iU.js",
+      "isDynamicEntry": false
+    },
+    "react-B35R_oEX": {
+      "file": "react-B35R_oEX.js",
+      "isDynamicEntry": false
+    },
+    "react-dom-CYDThRfy": {
+      "file": "react-dom-CYDThRfy.js",
+      "isDynamicEntry": false
+    }
+  }
+}
