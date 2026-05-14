@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import ChineseDateField from '../components/ChineseDateField.jsx'
 import { formatChineseDate, toISODate } from '../lib/dateZh.js'
 import { ConfirmDialog } from '../components/ConfirmDialog.jsx'
@@ -8,6 +8,8 @@ import {
   archivePrimaryButtonClass,
 } from '../components/ArchiveActions.jsx'
 import PageModuleSubtitle from '../components/PageModuleSubtitle.jsx'
+import { useAppData } from '../context/useAppData.js'
+import DemoBadge from '../components/DemoBadge.jsx'
 
 function uid() {
   return crypto.randomUUID()
@@ -53,24 +55,7 @@ function parseISODate(iso) {
   return new Date(y, mo - 1, d)
 }
 
-const initialMaterials = [
-  {
-    id: uid(),
-    musicalName: '「示例」粉丝来信',
-    materialName: '概念小卡',
-    materialType: 'card',
-    materialTypeCustom: '',
-    acquiredDate: '2026-05-06',
-    forExchange: true,
-    exchangeStatus: 'in_progress',
-    exchangeMemo:
-      '交换渠道：小红书\n' +
-      '对方：@我不是Hikaru\n' +
-      '进度：等待周末面交。\n' +
-      '备注：大学路某柜子a10',
-  },
-  
-]
+// initial data now comes from AppDataContext
 
 function MaterialFormModal({ editingItem, onClose, onSave }) {
   const [musicalName, setMusicalName] = useState(() => editingItem?.musicalName ?? '')
@@ -311,12 +296,130 @@ function MaterialFormModal({ editingItem, onClose, onSave }) {
   )
 }
 
+function ChevronIcon({ open }) {
+  return (
+    <svg
+      className={`h-5 w-5 shrink-0 text-stone-400 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      stroke="currentColor"
+    >
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5l7 7-7 7" />
+    </svg>
+  )
+}
+
+function groupByMusical(items) {
+  const map = new Map()
+  items.forEach((m) => {
+    const key = m.musicalName
+    if (!map.has(key)) map.set(key, [])
+    map.get(key).push(m)
+  })
+  return Array.from(map.entries())
+}
+
+const cardTones = [
+  'border-rose-100/80 bg-[#fffdfd]',
+  'border-teal-100/80 bg-[#fcfdfd]',
+  'border-violet-100/80 bg-[#fdfcfe]',
+]
+
+function MaterialCard({ m, toneIdx, openEdit, setConfirmDelete }) {
+  const d = parseISODate(m.acquiredDate)
+  const tone = cardTones[toneIdx % cardTones.length]
+  return (
+    <li
+      className={`flex flex-col rounded-[1.35rem] border ${tone} p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_14px_36px_-12px_rgba(0,0,0,0.07)] ring-1 ring-stone-100/40`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-base font-semibold leading-snug text-stone-900">
+          {m.materialName}
+          {m.isDemo && <DemoBadge />}
+        </h3>
+        <span className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200/80">
+          {displayTypeLabel(m)}
+        </span>
+      </div>
+
+      <dl className="mt-4 space-y-2 text-sm text-stone-600">
+        <div className="flex justify-between gap-2 border-t border-stone-100/80 pt-3">
+          <dt className="text-stone-500">获得日期</dt>
+          <dd className="text-right text-stone-800">{d ? formatChineseDate(d) : '—'}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-stone-500">是否交换</dt>
+          <dd className="font-medium text-stone-800">{m.forExchange ? '是' : '否'}</dd>
+        </div>
+        <div className="flex justify-between gap-2">
+          <dt className="text-stone-500">交换状态</dt>
+          <dd>
+            <span
+              className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${
+                !m.forExchange
+                  ? 'bg-stone-50 text-stone-500 ring-stone-200/80'
+                  : m.exchangeStatus === 'done'
+                    ? 'bg-teal-50 text-teal-900/85 ring-teal-100/80'
+                    : m.exchangeStatus === 'in_progress'
+                      ? 'bg-amber-50 text-amber-900/85 ring-amber-100/80'
+                      : 'bg-sky-50 text-sky-900/85 ring-sky-100/80'
+              }`}
+            >
+              {!m.forExchange ? '不涉及' : exchangeStatusLabel(m.exchangeStatus)}
+            </span>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="mt-4 flex-1">
+        <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">
+          备忘摘要
+        </p>
+        <p className="mt-1 rounded-xl border border-amber-200/50 bg-[#fffdf8]/90 px-3 py-2 font-serif text-sm leading-relaxed text-stone-700">
+          {summarizeMemo(m.forExchange ? m.exchangeMemo : '')}
+        </p>
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2 border-t border-stone-100/80 pt-4">
+        <button type="button" onClick={() => openEdit(m)} className={archiveGhostButtonClass(false)}>
+          编辑
+        </button>
+        <button
+          type="button"
+          onClick={() =>
+            setConfirmDelete({
+              id: m.id,
+              title: '删除物料',
+              detail: `确定删除「${m.musicalName} · ${m.materialName}」吗？此操作无法撤销。`,
+            })
+          }
+          className={archiveDangerButtonClass()}
+        >
+          删除
+        </button>
+      </div>
+    </li>
+  )
+}
+
 export default function OfficialMaterialsPage() {
-  const [items, setItems] = useState(initialMaterials)
+  const { materials: items, setMaterials: setItems } = useAppData()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalKey, setModalKey] = useState(0)
   const [editingItem, setEditingItem] = useState(null)
   const [confirmDelete, setConfirmDelete] = useState(null)
+  const [openGroups, setOpenGroups] = useState(() => new Set())
+
+  const groups = useMemo(() => groupByMusical(items), [items])
+
+  function toggleGroup(name) {
+    setOpenGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
 
   function openAdd() {
     setEditingItem(null)
@@ -336,6 +439,7 @@ export default function OfficialMaterialsPage() {
       if (exists) return list.map((x) => (x.id === row.id ? row : x))
       return [row, ...list]
     })
+    setOpenGroups((prev) => new Set(prev).add(row.musicalName))
   }
 
   return (
@@ -348,99 +452,77 @@ export default function OfficialMaterialsPage() {
             </h1>
             <PageModuleSubtitle>整理与归档已获得的官方物料</PageModuleSubtitle>
           </div>
-          <button type="button" onClick={openAdd} className={archivePrimaryButtonClass()}>
-            添加物料
-          </button>
+          <div className="flex gap-2">
+            {groups.length > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const allOpen = groups.every(([name]) => openGroups.has(name))
+                  if (allOpen) setOpenGroups(new Set())
+                  else setOpenGroups(new Set(groups.map(([name]) => name)))
+                }}
+                className={archiveGhostButtonClass(false)}
+              >
+                {groups.every(([name]) => openGroups.has(name)) ? '全部折叠' : '全部展开'}
+              </button>
+            )}
+            <button type="button" onClick={openAdd} className={archivePrimaryButtonClass()}>
+              添加物料
+            </button>
+          </div>
         </div>
 
-        <ul className="mt-10 grid gap-5 sm:grid-cols-2">
-          {items.map((m, i) => {
-            const d = parseISODate(m.acquiredDate)
-            const tone =
-              i % 3 === 0
-                ? 'border-rose-100/80 bg-[#fffdfd]'
-                : i % 3 === 1
-                  ? 'border-teal-100/80 bg-[#fcfdfd]'
-                  : 'border-violet-100/80 bg-[#fdfcfe]'
+        <div className="mt-10 space-y-4">
+          {groups.map(([musicalName, groupItems]) => {
+            const isOpen = openGroups.has(musicalName)
+            const typeCount = new Map()
+            for (const m of groupItems) {
+              const lbl = displayTypeLabel(m)
+              typeCount.set(lbl, (typeCount.get(lbl) || 0) + 1)
+            }
+            const typeSummary = Array.from(typeCount.entries())
+              .map(([lbl, cnt]) => `${lbl} ${cnt}`)
+              .join('、')
+
             return (
-              <li
-                key={m.id}
-                className={`flex flex-col rounded-[1.35rem] border ${tone} p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_14px_36px_-12px_rgba(0,0,0,0.07)] ring-1 ring-stone-100/40`}
+              <section
+                key={musicalName}
+                className="overflow-hidden rounded-[1.35rem] border border-teal-100/60 bg-white/95 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_10px_28px_-10px_rgba(0,0,0,0.06)]"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
-                      {m.musicalName}
-                    </p>
-                    <h2 className="mt-1 text-lg font-semibold leading-snug text-stone-900">
-                      {m.materialName}
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(musicalName)}
+                  className="flex w-full items-center gap-4 px-6 py-5 text-left transition hover:bg-teal-50/40 sm:px-8"
+                >
+                  <ChevronIcon open={isOpen} />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-lg font-semibold tracking-tight text-stone-900">
+                      {musicalName}
                     </h2>
+                    <p className="mt-1 text-xs text-stone-500">
+                      {groupItems.length} 件物料
+                      {typeSummary && <span className="ml-2 text-stone-400">（{typeSummary}）</span>}
+                    </p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-white/90 px-2.5 py-1 text-xs font-medium text-stone-600 ring-1 ring-stone-200/80">
-                    {displayTypeLabel(m)}
-                  </span>
-                </div>
+                </button>
 
-                <dl className="mt-4 space-y-2 text-sm text-stone-600">
-                  <div className="flex justify-between gap-2 border-t border-stone-100/80 pt-3">
-                    <dt className="text-stone-500">获得日期</dt>
-                    <dd className="text-right text-stone-800">{d ? formatChineseDate(d) : '—'}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-stone-500">是否交换</dt>
-                    <dd className="font-medium text-stone-800">{m.forExchange ? '是' : '否'}</dd>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <dt className="text-stone-500">交换状态</dt>
-                    <dd>
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ${
-                          !m.forExchange
-                            ? 'bg-stone-50 text-stone-500 ring-stone-200/80'
-                            : m.exchangeStatus === 'done'
-                              ? 'bg-teal-50 text-teal-900/85 ring-teal-100/80'
-                              : m.exchangeStatus === 'in_progress'
-                                ? 'bg-amber-50 text-amber-900/85 ring-amber-100/80'
-                                : 'bg-sky-50 text-sky-900/85 ring-sky-100/80'
-                        }`}
-                      >
-                        {!m.forExchange ? '不涉及' : exchangeStatusLabel(m.exchangeStatus)}
-                      </span>
-                    </dd>
-                  </div>
-                </dl>
-
-                <div className="mt-4 flex-1">
-                  <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-stone-400">
-                    备忘摘要
-                  </p>
-                  <p className="mt-1 rounded-xl border border-amber-200/50 bg-[#fffdf8]/90 px-3 py-2 font-serif text-sm leading-relaxed text-stone-700">
-                    {summarizeMemo(m.forExchange ? m.exchangeMemo : '')}
-                  </p>
-                </div>
-
-                <div className="mt-5 flex flex-wrap gap-2 border-t border-stone-100/80 pt-4">
-                  <button type="button" onClick={() => openEdit(m)} className={archiveGhostButtonClass(false)}>
-                    编辑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setConfirmDelete({
-                        id: m.id,
-                        title: '删除物料',
-                        detail: `确定删除「${m.musicalName} · ${m.materialName}」吗？此操作无法撤销。`,
-                      })
-                    }
-                    className={archiveDangerButtonClass()}
-                  >
-                    删除
-                  </button>
-                </div>
-              </li>
+                {isOpen && (
+                  <ul className="grid gap-5 border-t border-stone-100/80 px-4 py-5 sm:grid-cols-2 sm:px-6 sm:py-6">
+                    {groupItems.map((m, i) => (
+                      <MaterialCard
+                        key={m.id}
+                        m={m}
+                        toneIdx={i}
+                        openEdit={openEdit}
+                        setConfirmDelete={setConfirmDelete}
+                      />
+                    ))}
+                  </ul>
+                )}
+              </section>
             )
           })}
-        </ul>
+        </div>
       </div>
 
       {modalOpen && (

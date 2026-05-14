@@ -9,6 +9,8 @@ import {
 } from '../components/ArchiveActions.jsx'
 import PageModuleSubtitle from '../components/PageModuleSubtitle.jsx'
 import { getDaysUntilDeadline, getReminderStatus } from '../lib/pendingPickupStatus.js'
+import { useAppData } from '../context/useAppData.js'
+import DemoBadge from '../components/DemoBadge.jsx'
 
 function uid() {
   return crypto.randomUUID()
@@ -49,19 +51,7 @@ function compareCalendarEndAfterStart(startISO, endISO) {
   return e >= s
 }
 
-const initialPending = [
-  {
-    id: uid(),
-    musicalName: '「示例」在燃烧的黑暗中',
-    rewardType: 'ost',
-    rewardTypeCustom: '',
-    periodStart: '2026-06-16',
-    periodEnd: '2026-07-31',
-    pickupLocation: '某剧场MD 柜台',
-    memo: '需携带兑换券',
-  },
-  
-]
+// initial data now comes from AppDataContext
 
 function statusCardTone(status) {
   if (status === 'expired') {
@@ -302,7 +292,7 @@ function PendingFormModal({ editingItem, onClose, onSave }) {
 }
 
 export default function PendingMaterialsPage() {
-  const [items, setItems] = useState(initialPending)
+  const { pendingItems: items, setPendingItems: setItems } = useAppData()
   const [modalOpen, setModalOpen] = useState(false)
   const [modalKey, setModalKey] = useState(0)
   const [editingItem, setEditingItem] = useState(null)
@@ -366,8 +356,9 @@ export default function PendingMaterialsPage() {
                 className={`flex flex-col rounded-[1.35rem] border ${tone.border} ${tone.bg} p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_14px_36px_-12px_rgba(0,0,0,0.07)] ring-1 ${tone.ring}`}
               >
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
+                  <p className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
                     {m.musicalName}
+                    {m.isDemo && <DemoBadge />}
                   </p>
                   <span
                     className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${tone.badge}`}
