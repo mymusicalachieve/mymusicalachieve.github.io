@@ -11,16 +11,17 @@ function storageExists() {
   }
 }
 
-function loadFromStorage(defaults) {
+/** 读取存档：缺字段时用空数组，绝不回退到 createDefaults() 以免把示例数据写进用户存档 */
+function loadFromStorage() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
     return {
-      plates: Array.isArray(parsed.plates) ? parsed.plates : defaults.plates,
-      materials: Array.isArray(parsed.materials) ? parsed.materials : defaults.materials,
-      pendingItems: Array.isArray(parsed.pendingItems) ? parsed.pendingItems : defaults.pendingItems,
-      actors: Array.isArray(parsed.actors) ? parsed.actors : defaults.actors,
+      plates: Array.isArray(parsed.plates) ? parsed.plates : [],
+      materials: Array.isArray(parsed.materials) ? parsed.materials : [],
+      pendingItems: Array.isArray(parsed.pendingItems) ? parsed.pendingItems : [],
+      actors: Array.isArray(parsed.actors) ? parsed.actors : [],
     }
   } catch {
     return null
@@ -42,7 +43,7 @@ export default function AppDataProvider({ defaults, children }) {
   const [firstRunDismissed, setFirstRunDismissed] = useState(false)
 
   const [snapshot] = useState(() => {
-    const stored = loadFromStorage(defaults)
+    const stored = loadFromStorage()
     if (stored) return stored
     return EMPTY
   })
