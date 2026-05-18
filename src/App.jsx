@@ -15,7 +15,7 @@ export default function App() {
   return (
     <AppDataProvider defaults={defaults}>
       <FirstRunDialog />
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <Routes>
           <Route element={<MainLayout />}>
             <Route index element={<HomePage />} />

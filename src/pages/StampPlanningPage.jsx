@@ -34,15 +34,43 @@ function ensurePlateFields(plate) {
   }
 }
 
+/** 场次状态：兼容旧数据仅有 done / planned */
+const SESSION_STATUSES = ['planned', 'in_progress', 'done', 'cancelled']
+
+function normalizeSessionStatus(status) {
+  if (status === 'done' || status === 'planned' || status === 'in_progress' || status === 'cancelled') {
+    return status
+  }
+  return 'planned'
+}
+
+function ensureSessionFields(session) {
+  const s = { ...session }
+  s.status = normalizeSessionStatus(s.status)
+  if (typeof s.title !== 'string') s.title = ''
+  if (typeof s.memo !== 'string') s.memo = ''
+  if (typeof s.rewardNote !== 'string') s.rewardNote = ''
+  if (typeof s.updatedAt !== 'string') s.updatedAt = ''
+  if (typeof s.completedAt !== 'string') s.completedAt = ''
+  return s
+}
+
+function sessionContributesToExpected(s) {
+  return normalizeSessionStatus(s.status) !== 'cancelled'
+}
+
 function sessionPoints(session) {
   return session.multiplier
 }
 
 function computePlateStats(plate) {
-  const current = plate.sessions
-    .filter((s) => s.status === 'done')
+  const sessions = plate.sessions.map(ensureSessionFields)
+  const current = sessions
+    .filter((s) => normalizeSessionStatus(s.status) === 'done')
     .reduce((sum, s) => sum + sessionPoints(s), 0)
-  const expected = plate.sessions.reduce((sum, s) => sum + sessionPoints(s), 0)
+  const expected = sessions
+    .filter(sessionContributesToExpected)
+    .reduce((sum, s) => sum + sessionPoints(s), 0)
   const target = plate.targetPoints
   const remainingByExpected = Math.max(0, target - expected)
   const remainingByCurrent = Math.max(0, target - current)
@@ -99,7 +127,65 @@ function uniqueMusicalNames(plates) {
 
 const slotLabels = { matinee: '午场', evening: '晚场' }
 const multLabels = { 1: '1倍', 2: '2倍', 3: '3倍' }
-const statusLabels = { done: '已完成', planned: '已计划' }
+const statusLabels = {
+  planned: '已计划',
+  in_progress: '进行中',
+  done: '已完成',
+  cancelled: '已取消',
+}
+const statusIcons = {
+  planned: '○',
+  in_progress: '◐',
+  done: '✓',
+  cancelled: '⊘',
+}
+
+function buildNewSession({
+  dateStr,
+  slot,
+  multiplier,
+  status,
+  title = '',
+  memo = '',
+  rewardNote = '',
+}) {
+  const ns = normalizeSessionStatus(status)
+  const today = todayISO()
+  return {
+    id: uid(),
+    date: dateStr,
+    slot,
+    multiplier,
+    status: ns,
+    title: title.trim(),
+    memo: memo.trim(),
+    rewardNote: rewardNote.trim(),
+    updatedAt: today,
+    completedAt: ns === 'done' ? today : '',
+  }
+}
+
+function mergeSessionOnSave(prevSession, updates) {
+  const s = ensureSessionFields(prevSession)
+  const merged = { ...s, ...updates }
+  if (typeof merged.title === 'string') merged.title = merged.title.trim()
+  if (typeof merged.memo === 'string') merged.memo = merged.memo.trim()
+  if (typeof merged.rewardNote === 'string') merged.rewardNote = merged.rewardNote.trim()
+  const ns = normalizeSessionStatus(merged.status)
+  const today = todayISO()
+  let completedAt = s.completedAt
+  if (ns === 'done') {
+    if (!completedAt) completedAt = today
+  } else {
+    completedAt = ''
+  }
+  return {
+    ...merged,
+    status: ns,
+    updatedAt: today,
+    completedAt,
+  }
+}
 
 const cardAccents = [
   'border-l-rose-300/90',
@@ -293,7 +379,10 @@ function AddRecordModal({ open, onClose, plates, onSubmit }) {
   const [selectedDate, setSelectedDate] = useState(undefined)
   const [slot, setSlot] = useState('matinee')
   const [multiplier, setMultiplier] = useState(1)
-  const [status, setStatus] = useState('done')
+  const [status, setStatus] = useState('planned')
+  const [sessionTitle, setSessionTitle] = useState('')
+  const [sessionMemo, setSessionMemo] = useState('')
+  const [rewardNote, setRewardNote] = useState('')
   const [formError, setFormError] = useState('')
 
   function applyTemplate(musicalName) {
@@ -359,7 +448,15 @@ function AddRecordModal({ open, onClose, plates, onSubmit }) {
       return
     }
     const dateStr = toISODate(selectedDate)
-    const session = { id: uid(), date: dateStr, slot, multiplier, status }
+    const session = buildNewSession({
+      dateStr,
+      slot,
+      multiplier,
+      status,
+      title: sessionTitle,
+      memo: sessionMemo,
+      rewardNote,
+    })
 
     if (plateMode === 'existing') {
       if (!selectedPlateId) {
@@ -585,6 +682,45 @@ function AddRecordModal({ open, onClose, plates, onSubmit }) {
             </>
           )}
 
+          <div className="space-y-2">
+            <label htmlFor="session-title" className="text-xs font-medium text-stone-500">
+              积点名称（可选）
+            </label>
+            <input
+              id="session-title"
+              value={sessionTitle}
+              onChange={(e) => setSessionTitle(e.target.value)}
+              placeholder="例如：首刷末场、朋友代刷"
+              className="w-full rounded-2xl border border-stone-200/90 bg-white px-4 py-3 text-sm text-stone-800 shadow-sm outline-none ring-rose-100/80 placeholder:text-stone-400 focus:border-rose-200 focus:ring-2"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-stone-500">备注</span>
+            <div className="rounded-2xl border border-amber-200/50 bg-[#fffdf8] p-3">
+              <textarea
+                value={sessionMemo}
+                onChange={(e) => setSessionMemo(e.target.value)}
+                rows={2}
+                placeholder="场次备忘、座位、同行等"
+                className="w-full resize-none bg-transparent text-sm text-stone-800 outline-none placeholder:text-stone-400"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="reward-note" className="text-xs font-medium text-stone-500">
+              奖励 / 物料相关备注（可选）
+            </label>
+            <input
+              id="reward-note"
+              value={rewardNote}
+              onChange={(e) => setRewardNote(e.target.value)}
+              placeholder="例如：可领拍立得、需柜台登记"
+              className="w-full rounded-2xl border border-stone-200/90 bg-white px-4 py-3 text-sm text-stone-800 shadow-sm outline-none ring-violet-100/80 placeholder:text-stone-400 focus:border-violet-200 focus:ring-2"
+            />
+          </div>
+
           <ChineseDateField
             label="日期"
             value={selectedDate}
@@ -634,10 +770,12 @@ function AddRecordModal({ open, onClose, plates, onSubmit }) {
 
           <div className="space-y-2">
             <span className="text-xs font-medium text-stone-500">状态</span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {[
-                { key: 'done', label: '已完成' },
-                { key: 'planned', label: '已计划' },
+                { key: 'planned', label: '○ 已计划' },
+                { key: 'in_progress', label: '◐ 进行中' },
+                { key: 'done', label: '✓ 已完成' },
+                { key: 'cancelled', label: '⊘ 已取消' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -824,7 +962,10 @@ function EditSessionModal({ plateName, session, onClose, onSave }) {
   const [selectedDate, setSelectedDate] = useState(() => parseISODate(session.date))
   const [slot, setSlot] = useState(session.slot)
   const [multiplier, setMultiplier] = useState(session.multiplier)
-  const [status, setStatus] = useState(session.status)
+  const [status, setStatus] = useState(() => normalizeSessionStatus(session.status))
+  const [sessionTitle, setSessionTitle] = useState(() => ensureSessionFields(session).title)
+  const [sessionMemo, setSessionMemo] = useState(() => ensureSessionFields(session).memo)
+  const [rewardNote, setRewardNote] = useState(() => ensureSessionFields(session).rewardNote)
   const [formError, setFormError] = useState('')
 
   useEffect(() => {
@@ -850,13 +991,17 @@ function EditSessionModal({ plateName, session, onClose, onSave }) {
       setFormError('请选择日期')
       return
     }
-    onSave({
-      ...session,
-      date: toISODate(selectedDate),
-      slot,
-      multiplier,
-      status,
-    })
+    onSave(
+      mergeSessionOnSave(session, {
+        date: toISODate(selectedDate),
+        slot,
+        multiplier,
+        status,
+        title: sessionTitle,
+        memo: sessionMemo,
+        rewardNote,
+      }),
+    )
     onClose()
   }
 
@@ -865,11 +1010,51 @@ function EditSessionModal({ plateName, session, onClose, onSave }) {
       <button type="button" className="absolute inset-0 bg-stone-900/20" aria-label="关闭" onClick={onClose} />
       <div className="relative z-[1] max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-violet-100/80 bg-[#fdfcfe] shadow-[0_-8px_40px_rgba(0,0,0,0.08)] sm:rounded-3xl sm:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.12)]">
         <div className="sticky top-0 border-b border-violet-100/70 bg-[#fdfcfe] px-5 py-4 sm:px-6">
-          <h2 className="text-base font-semibold text-stone-800">编辑场次</h2>
+          <h2 className="text-base font-semibold text-stone-800">编辑积点场次</h2>
           <p className="mt-1 text-xs text-stone-500">{plateName}</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-5 px-5 py-6 sm:px-6">
           <ChineseDateField label="日期" value={selectedDate} onChange={setSelectedDate} />
+
+          <div className="space-y-2">
+            <label htmlFor="es-title" className="text-xs font-medium text-stone-500">
+              积点名称（可选）
+            </label>
+            <input
+              id="es-title"
+              value={sessionTitle}
+              onChange={(e) => setSessionTitle(e.target.value)}
+              placeholder="例如：首刷末场"
+              className="w-full rounded-2xl border border-stone-200/90 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-violet-200 focus:ring-2"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <span className="text-xs font-medium text-stone-500">备注</span>
+            <div className="rounded-2xl border border-amber-200/50 bg-[#fffdf8] p-3">
+              <textarea
+                value={sessionMemo}
+                onChange={(e) => setSessionMemo(e.target.value)}
+                rows={3}
+                placeholder="场次备忘、座位、同行等"
+                className="w-full resize-none bg-transparent text-sm text-stone-800 outline-none placeholder:text-stone-400"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label htmlFor="es-reward" className="text-xs font-medium text-stone-500">
+              奖励 / 物料相关备注（可选）
+            </label>
+            <input
+              id="es-reward"
+              value={rewardNote}
+              onChange={(e) => setRewardNote(e.target.value)}
+              placeholder="例如：可领拍立得"
+              className="w-full rounded-2xl border border-stone-200/90 bg-white px-4 py-3 text-sm shadow-sm outline-none focus:border-violet-200 focus:ring-2"
+            />
+          </div>
+
           <div className="space-y-2">
             <span className="text-xs font-medium text-stone-500">午场 / 晚场</span>
             <div className="flex gap-2">
@@ -910,10 +1095,12 @@ function EditSessionModal({ plateName, session, onClose, onSave }) {
           </div>
           <div className="space-y-2">
             <span className="text-xs font-medium text-stone-500">状态</span>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {[
-                { key: 'done', label: '已完成' },
-                { key: 'planned', label: '已计划' },
+                { key: 'planned', label: '○ 已计划' },
+                { key: 'in_progress', label: '◐ 进行中' },
+                { key: 'done', label: '✓ 已完成' },
+                { key: 'cancelled', label: '⊘ 已取消' },
               ].map(({ key, label }) => (
                 <button
                   key={key}
@@ -994,6 +1181,14 @@ function GroupSummaryBar({ groupPlates }) {
   )
 }
 
+function sessionStatusChipClass(statusRaw) {
+  const key = normalizeSessionStatus(statusRaw)
+  if (key === 'done') return 'bg-teal-50 text-teal-900/85 ring-1 ring-teal-100/80'
+  if (key === 'in_progress') return 'bg-amber-50 text-amber-900/85 ring-1 ring-amber-100/80'
+  if (key === 'cancelled') return 'bg-stone-100 text-stone-500 ring-1 ring-stone-200/70'
+  return 'bg-sky-50 text-sky-900/85 ring-1 ring-sky-100/80'
+}
+
 function PlateCard({ plate, idx, allPlates, setEditPlateId, setSessionEdit, setConfirmState, setPlates }) {
   const stats = computePlateStats(plate)
   const accent = cardAccents[idx % cardAccents.length]
@@ -1063,7 +1258,7 @@ function PlateCard({ plate, idx, allPlates, setEditPlateId, setSessionEdit, setC
           </div>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-stone-500">
-          「剩余所需」按预计积点（已完成 + 已计划）计算；按仅已完成场次计，距离满盘还差{' '}
+          「剩余所需」按预计积点（已计划 + 进行中 + 已完成；已取消不计入）计算；按仅已完成场次计，距离满盘还差{' '}
           <span className="font-medium tabular-nums text-stone-700">{stats.remainingByCurrent}</span> 点。
         </p>
 
@@ -1123,78 +1318,131 @@ function PlateCard({ plate, idx, allPlates, setEditPlateId, setSessionEdit, setC
         />
         <div>
           <p className="mb-3 text-xs font-medium uppercase tracking-[0.12em] text-stone-500">
-            场次记录
+            积点场次
           </p>
           <div className="overflow-x-auto rounded-2xl border border-stone-100/90 bg-[#fdfcfc]">
-            <table className="w-full min-w-[380px] text-left text-sm">
+            <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
                 <tr className="border-b border-stone-200/80 text-xs text-stone-500">
-                  <th className="px-3 py-2.5 font-medium">日期</th>
+                  <th className="min-w-[9rem] px-3 py-2.5 font-medium">日期 / 积点</th>
                   <th className="px-3 py-2.5 font-medium">场次</th>
                   <th className="px-3 py-2.5 font-medium">倍率</th>
-                  <th className="px-3 py-2.5 font-medium">状态</th>
+                  <th className="min-w-[10rem] px-3 py-2.5 font-medium">状态</th>
                   <th className="px-3 py-2.5 text-right font-medium tabular-nums">本场</th>
-                  <th className="px-3 py-2.5 text-right font-medium">操作</th>
+                  <th className="min-w-[8.5rem] px-3 py-2.5 text-right font-medium">操作</th>
                 </tr>
               </thead>
               <tbody>
-                {sessionsSorted.map((s) => {
+                {sessionsSorted.map((sRaw) => {
+                  const s = ensureSessionFields(sRaw)
                   const d = new Date(s.date + 'T12:00:00')
+                  const st = normalizeSessionStatus(s.status)
                   return (
-                    <tr key={s.id} className="border-b border-stone-100/80 last:border-0">
-                      <td className="px-3 py-2.5 text-stone-700">{formatChineseDate(d)}</td>
-                      <td className="px-3 py-2.5 text-stone-600">{slotLabels[s.slot]}</td>
-                      <td className="px-3 py-2.5 tabular-nums text-stone-600">
+                    <tr
+                      key={s.id}
+                      className={`group/ses border-b border-stone-100/80 transition-colors last:border-0 ${
+                        st === 'done' ? 'bg-teal-50/15' : ''
+                      } ${st === 'cancelled' ? 'opacity-70' : ''}`}
+                    >
+                      <td className="max-w-[14rem] px-3 py-2.5 align-top text-stone-700">
+                        <div className="text-sm">{formatChineseDate(d)}</div>
+                        {s.title ? (
+                          <div className="mt-0.5 text-xs font-medium text-stone-900">{s.title}</div>
+                        ) : null}
+                        {s.memo || s.rewardNote ? (
+                          <div className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-stone-400">
+                            {s.memo}
+                            {s.memo && s.rewardNote ? ' · ' : ''}
+                            {s.rewardNote}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2.5 align-top text-stone-600">{slotLabels[s.slot]}</td>
+                      <td className="px-3 py-2.5 align-top tabular-nums text-stone-600">
                         {multLabels[s.multiplier]}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                            s.status === 'done'
-                              ? 'bg-teal-50 text-teal-900/85 ring-1 ring-teal-100/80'
-                              : 'bg-sky-50 text-sky-900/85 ring-1 ring-sky-100/80'
-                          }`}
-                        >
-                          {statusLabels[s.status]}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums font-medium text-stone-800">
-                        +{sessionPoints(s)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <div className="flex justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => setSessionEdit({ plateId: plate.id, session: s })}
-                            className="rounded-lg px-2 py-1 text-xs font-medium text-teal-800/90 hover:bg-teal-50"
+                      <td className="px-3 py-2.5 align-top">
+                        <div className="flex flex-col gap-2">
+                          <span
+                            className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-medium ${sessionStatusChipClass(s.status)}`}
                           >
-                            编辑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setConfirmState({
-                                title: '删除场次',
-                                detail: `确定从「${plate.name}」中删除该场次记录吗？`,
-                                onConfirm: () => {
+                            {statusIcons[st]} {statusLabels[st]}
+                          </span>
+                          <div className="flex flex-wrap gap-0.5" title="快速切换状态">
+                            {SESSION_STATUSES.map((nextSt) => (
+                              <button
+                                key={nextSt}
+                                type="button"
+                                aria-label={`设为${statusLabels[nextSt]}`}
+                                onClick={() => {
                                   setPlates((p) =>
                                     p.map((pl) =>
                                       pl.id === plate.id
                                         ? {
                                             ...pl,
-                                            sessions: pl.sessions.filter((x) => x.id !== s.id),
+                                            sessions: pl.sessions.map((x) =>
+                                              x.id === s.id ? mergeSessionOnSave(x, { status: nextSt }) : x,
+                                            ),
                                           }
                                         : pl,
                                     ),
                                   )
-                                  setConfirmState(null)
-                                },
-                              })
-                            }
-                            className="rounded-lg px-2 py-1 text-xs font-medium text-rose-700/90 hover:bg-rose-50"
-                          >
-                            删除
-                          </button>
+                                }}
+                                className={`rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums transition ${
+                                  st === nextSt
+                                    ? 'bg-rose-100/90 text-rose-900 ring-1 ring-rose-200/80'
+                                    : 'text-stone-400 hover:bg-stone-100 hover:text-stone-700'
+                                }`}
+                              >
+                                {statusIcons[nextSt]}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </td>
+                      <td
+                        className={`px-3 py-2.5 text-right align-top tabular-nums font-medium ${
+                          st === 'cancelled' ? 'text-stone-400 line-through' : 'text-stone-800'
+                        }`}
+                      >
+                        {st === 'cancelled' ? '—' : `+${sessionPoints(s)}`}
+                      </td>
+                      <td className="px-3 py-2.5 text-right align-top">
+                        <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end sm:gap-1">
+                          <div className="flex gap-1 opacity-100 transition-opacity md:opacity-0 md:group-hover/ses:opacity-100">
+                            <button
+                              type="button"
+                              onClick={() => setSessionEdit({ plateId: plate.id, session: s })}
+                              className="rounded-lg px-2 py-1 text-xs font-medium text-teal-800/90 hover:bg-teal-50"
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setConfirmState({
+                                  title: '删除积点场次',
+                                  detail: `确定删除「${s.title || formatChineseDate(d)}」这条积点记录吗？`,
+                                  onConfirm: () => {
+                                    setPlates((p) =>
+                                      p.map((pl) =>
+                                        pl.id === plate.id
+                                          ? {
+                                              ...pl,
+                                              sessions: pl.sessions.filter((x) => x.id !== s.id),
+                                            }
+                                          : pl,
+                                      ),
+                                    )
+                                    setConfirmState(null)
+                                  },
+                                })
+                              }
+                              className="rounded-lg px-2 py-1 text-xs font-medium text-rose-700/90 hover:bg-rose-50"
+                            >
+                              删除
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
